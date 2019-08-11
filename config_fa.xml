@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+	<name>irpul</name>
+	<displayName><![CDATA[سامانه ایرپول]]></displayName>
+	<version><![CDATA[1.0]]></version>
+	<description><![CDATA[ماژول رایگان ایرپول انلاین.]]></description>
+	<author><![CDATA[iPresta.ir]]></author>
+	<tab><![CDATA[payments_gateways]]></tab>
+	<confirmUninstall><![CDATA[آیا مطمئن هستید می خواهید اطلاعات ماژول را حذف کنید؟]]></confirmUninstall>
+	<is_configurable>1</is_configurable>
+	<need_instance>1</need_instance>
+	<limited_countries></limited_countries>
+</module>
