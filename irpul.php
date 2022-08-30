@@ -158,7 +158,7 @@ class irpul extends PaymentModule
 			 $amount = number_format($this->convertPriceFull($this->context->cart->getOrderTotal(true, 3), $current_currency, $purchase_currency), 0, '', '');
 		}
 
-        $webgate_id	= Configuration::get('IPRESTA_irpul_USER');
+        $token	= Configuration::get('IPRESTA_irpul_USER');
         $callback 	= $this->context->link->getModuleLink('irpul', 'validation');
         $order_id 	= substr($this->context->cart->id.rand(),-8);
 		
@@ -196,9 +196,9 @@ class irpul extends PaymentModule
 		}
 
 		$amount = (int)$amount;
-		$parameters = array
-		(
-			'webgate_id' 	=> $webgate_id,
+		$parameters = array(
+			'method' 		=> 'payment',
+			//'webgate_id' 	=> $webgate_id,
 			'amount' 		=> $amount,
 			'callback_url' 	=> $callback, 
 			'plugin' 		=> 'prestashop',
@@ -211,25 +211,31 @@ class irpul extends PaymentModule
 			'address' 		=> $customer_address,
 			'description' 	=> $description,
 		);
-		try {
-			$client = new SoapClient('https://irpul.ir/webservice.php?wsdl' , array('soap_version'=>'SOAP_1_2','cache_wsdl'=>WSDL_CACHE_NONE ,'encoding'=>'UTF-8'));
-			$result = $client->Payment($parameters);
-		}catch (Exception $e) { echo 'Error'. $e->getMessage();  }
+		
+		$result = post_data('https://irpul.ir/ws.php', $parameters, $token );
 
-        if(isset($result) && $result['res_code'] == 1){
-            $this->context->cookie->__set("RefId", $order_id);
-            $this->context->cookie->__set("amount", (int)$amount);
+		if( isset($result['http_code']) ){
+			$data =  json_decode($result['data'],true);
 
-			//'redirect_link' => $this->_go_url,
-            $this->context->smarty->assign(array(
-                'redirect_link' => $result['url'],
-                'tid' 			=> $result['tran_id']
-            ));
-            return true;
-        }
-		else
-		{
-            $this->context->controller->errors[] = $this->showMessages($result['res_code']);
+			if( isset($data['code']) && $data['code'] === 1){
+				 $this->context->cookie->__set("RefId", $order_id);
+				$this->context->cookie->__set("amount", (int)$amount);
+
+				//'redirect_link' => $this->_go_url,
+				$this->context->smarty->assign(array(
+					'redirect_link' => $result['url'],
+					'tid' 			=> $result['tran_id']
+				));
+				return true;
+			}
+			else{
+				$error_message = 'Error Code: ' . $data['code'] . "<br/>" . $data['status'];
+				//$this->context->controller->errors[] = $this->showMessages($result['res_code']);
+				$this->context->controller->errors[] = $error_message;
+				return false;
+			}
+		}else{
+			$this->context->controller->errors[] = $this->showMessages($result['res_code']);
             return false;
 		}
 	}
@@ -277,32 +283,74 @@ class irpul extends PaymentModule
 		}
 		return $err;
 	}
+	
+	public function post_data($url,$params,$token) {
+		ini_set('default_socket_timeout', 15);
 
-	function url_decrypt($string){
-		$counter = 0;
-		$data = str_replace(array('-','_','.'),array('+','/','='),$string);
-		$mod4 = strlen($data) % 4;
-		if ($mod4) {
-		$data .= substr('====', $mod4);
+		$headers = array(
+			"Authorization: token= {$token}",
+			'Content-type: application/json'
+		);
+
+		$handle = curl_init($url);
+		curl_setopt($handle, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($handle, CURLOPT_CONNECTTIMEOUT, 30);
+		curl_setopt($handle, CURLOPT_TIMEOUT, 40);
+		curl_setopt($handle, CURLOPT_SSL_VERIFYPEER, false);
+		curl_setopt($handle, CURLOPT_POSTFIELDS, json_encode($params) );
+		curl_setopt($handle, CURLOPT_HTTPHEADER, $headers );
+
+		$response = curl_exec($handle);
+		//error_log('curl response1 : '. print_r($response,true));
+
+		$msg='';
+		$http_code = intval(curl_getinfo($handle, CURLINFO_HTTP_CODE));
+
+		$status= true;
+
+		if ($response === false) {
+			$curl_errno = curl_errno($handle);
+			$curl_error = curl_error($handle);
+			$msg .= "Curl error $curl_errno: $curl_error";
+			$status = false;
 		}
-		$decrypted = base64_decode($data);
-		
-		$check = array('tran_id','order_id','amount','refcode','status');
-		foreach($check as $str){
-			str_replace($str,'',$decrypted,$count);
-			if($count > 0){
-				$counter++;
+
+		curl_close($handle);//dont move uppder than curl_errno
+
+		if( $http_code == 200 ){
+			$msg .= "Request was successfull";
+		}
+		else{
+			$status = false;
+			if ($http_code == 400) {
+				$status = true;
+			}
+			elseif ($http_code == 401) {
+				$msg .= "Invalid access token provided";
+			}
+			elseif ($http_code == 502) {
+				$msg .= "Bad Gateway";
+			}
+			elseif ($http_code >= 500) {// do not wat to DDOS server if something goes wrong
+				sleep(2);
 			}
 		}
-		if($counter === 5){
-			return array('data'=>$decrypted , 'status'=>true);
-		}else{
-			return array('data'=>'' , 'status'=>false);
+
+		$res['http_code'] 	= $http_code;
+		$res['status'] 		= $status;
+		$res['msg'] 		= $msg;
+		$res['data'] 		= $response;
+
+		if(!$status){
+			//error_log(print_r($res,true));
 		}
+		return $res;
 	}
 
+
 	public function verify($tran_id){
-        $webgate_id = Configuration::get('IPRESTA_irpul_USER');
+        $token = Configuration::get('IPRESTA_irpul_USER');
+		
         $purchase_currency = new Currency(Currency::getIdByIsoCode('IRR'));
         $current_currency = new Currency($this->context->cookie->id_currency);
 		$res = false;
@@ -314,20 +362,32 @@ class irpul extends PaymentModule
 		}
 		$amount = (int)$amount;
 		
-		
 		$parameters = array(
-			'webgate_id'	=> $webgate_id,
-			'tran_id' 		=> $tran_id,
+			'method' 	    => 'verify',
+			'trans_id' 		=> $tran_id,
 			'amount'	 	=> $amount,
 		);
-		try {
-			$client = new SoapClient('https://irpul.ir/webservice.php?wsdl' , array('soap_version'=>'SOAP_1_2','cache_wsdl'=>WSDL_CACHE_NONE ,'encoding'=>'UTF-8'));
-			$result = $client->PaymentVerification($parameters);
-		}catch (Exception $e) { echo 'Error'. $e->getMessage();  }
-		if ( isset($result) && $result === 1){
-			$res = true;
+		
+		$result =  post_data('https://irpul.ir/ws.php', $parameters, $token );
+		
+		if( isset($result['http_code']) ){
+			$data =  json_decode($result['data'],true);
+
+			if( isset($data['code']) && $data['code'] === 1){
+				$irpul_amount  = $data['amount'];
+				
+				if($amount == $irpul_amount){
+					$res = true;
+				}
+				else{
+					$this->context->controller->errors[] = 'مبلغ تراکنش در ایرپول (' . number_format($irpul_amount) . ' تومان) تومان با مبلغ تراکنش در سیمانت (' . number_format($amount) . ' تومان) برابر نیست';
+				}
+			}
+			else{
+				$this->context->controller->errors[] = 'خطا در پرداخت. کد خطا: ' . $data['code'] . '<br/> ' . $data['status'];
+			}
 		}else{
-			$this->context->controller->errors[] = 'کد خطا : '. $result;
+			$this->context->controller->errors[] = "عدم دریافت پاسخ";
 		}
 
 		return $res;

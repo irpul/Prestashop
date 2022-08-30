@@ -21,48 +21,21 @@ class irpulValidationModuleFrontController extends ModuleFrontController{
 		$this->ssl = true;
 	}
 	
-	
-	function url_decrypt($string){
-		$counter = 0;
-		$data = str_replace(array('-','_','.'),array('+','/','='),$string);
-		$mod4 = strlen($data) % 4;
-		if ($mod4) {
-		$data .= substr('====', $mod4);
-		}
-		$decrypted = base64_decode($data);
-		
-		$check = array('tran_id','order_id','amount','refcode','status');
-		foreach($check as $str){
-			str_replace($str,'',$decrypted,$count);
-			if($count > 0){
-				$counter++;
-			}
-		}
-		if($counter === 5){
-			return array('data'=>$decrypted , 'status'=>true);
-		}else{
-			return array('data'=>'' , 'status'=>false);
-		}
-	}
-	
 	public function postProcess(){
 		if(Configuration::get('IPRESTA_irpul_DEBUG'))
 			@ini_set('display_errors', 'on');
 		
 		// post and get
 		//$this->tran_id 		= Tools::getValue('tran_id');
-		$irpul_token  = Tools::getValue('irpul_token');
-		$this->irpul_token = $irpul_token;
 		
-		$decrypted 		= $this->url_decrypt($irpul_token);
-		if($decrypted['status']){
-			parse_str($decrypted['data'], $ir_output);
-			$this->tran_id 	= $ir_output['tran_id'];
-			$this->order_id = $ir_output['order_id'];
-			$this->amount 	= $ir_output['amount'];
-			$this->refcode	= $ir_output['refcode'];
-			$this->state 	= $ir_output['status'];
-		}
+		//$irpul_token  = Tools::getValue('irpul_token');
+		//$this->irpul_token = $irpul_token;
+		
+		$this->tran_id 	= Tools::getValue('tran_id');
+		$this->order_id = Tools::getValue('order_id');
+		$this->amount 	= Tools::getValue('amount');
+		$this->refcode	= Tools::getValue('refcode');
+		$this->state 	= Tools::getValue('status');
 	}
 	
 	/**
